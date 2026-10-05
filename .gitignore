@@ -1,0 +1,41 @@
+# Qt / CMake build folders
+build/
+build-*/
+cmake-build-*/
+CMakeFiles/
+
+# CMake generated files
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# Qt Creator user files
+*.user
+*.user.*
+*.pro.user
+*.pro.user.*
+
+# Compiled files
+*.exe
+*.dll
+*.obj
+*.o
+*.a
+*.lib
+
+# Debug / Release
+Debug/
+Release/
+
+# Logs
+*.log
+
+# Environment / secrets
+.env
+.env.*
+
+# OS files
+Thumbs.db
+.DS_Store
+
+.qtcreator/
