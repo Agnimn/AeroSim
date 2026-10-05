@@ -14,332 +14,27 @@ ApplicationWindow {
     title: "Airspace Scenario Generator"
     color: "#07121c"
 
-    // =========================================================
-    // SCENARIO DATA
-    // =========================================================
+    readonly property int entityCount: scenarioEngine.entityCount
+    readonly property string entityType: scenarioEngine.entityType
+    readonly property string region: scenarioEngine.region
+    readonly property bool scenarioGenerated: scenarioEngine.scenarioGenerated
+    readonly property string statusMessage: scenarioEngine.statusMessage
 
-    property int entityCount: 0
-    property string entityType: ""
-    property string region: ""
-    property bool scenarioGenerated: false
-    property string statusMessage: "READY"
-
-    // =========================================================
-    // MAP PLUGIN
-    // =========================================================
+    property bool showingAircraft3D: false
 
     Plugin {
         id: mapPlugin
         name: "osm"
     }
 
-    // =========================================================
-    // ENTITY MODEL
-    // =========================================================
-    // This model contains the aircraft/ship positions.
-    // MapItemView below will convert each item into a
-    // MapQuickItem on the map.
-
-    ListModel {
-        id: entityModel
-    }
-
-    // =========================================================
-    // REGION CENTER
-    // =========================================================
-
-    function getRegionCenter() {
-
-        if (region === "North India") {
-            return QtPositioning.coordinate(29.0, 79.0)
-        }
-
-        if (region === "South India") {
-            return QtPositioning.coordinate(13.5, 78.5)
-        }
-
-        if (region === "East India") {
-            return QtPositioning.coordinate(23.5, 87.5)
-        }
-
-        if (region === "West India") {
-            return QtPositioning.coordinate(21.0, 73.5)
-        }
-
-        return QtPositioning.coordinate(22.5, 79.0)
-    }
-
-    // =========================================================
-    // ENTITY COORDINATES
-    // =========================================================
-
-    function getEntityCoordinate(index) {
-
-        // -----------------------------------------------------
-        // NORTH INDIA
-        // -----------------------------------------------------
-
-        if (region === "North India") {
-
-            var northPoints = [
-                QtPositioning.coordinate(28.6139, 77.2090), // Delhi
-                QtPositioning.coordinate(30.7333, 76.7794), // Chandigarh
-                QtPositioning.coordinate(26.9124, 75.7873), // Jaipur
-                QtPositioning.coordinate(27.1767, 78.0081), // Agra
-                QtPositioning.coordinate(31.6340, 74.8723), // Amritsar
-                QtPositioning.coordinate(30.3165, 78.0322), // Dehradun
-                QtPositioning.coordinate(29.9457, 78.1642), // Haridwar
-                QtPositioning.coordinate(25.4358, 81.8463)  // Prayagraj
-            ]
-
-            return northPoints[index % northPoints.length]
-        }
-
-        // -----------------------------------------------------
-        // SOUTH INDIA
-        // -----------------------------------------------------
-
-        if (region === "South India") {
-
-            var southPoints = [
-                QtPositioning.coordinate(12.9716, 77.5946), // Bengaluru
-                QtPositioning.coordinate(13.0827, 80.2707), // Chennai
-                QtPositioning.coordinate(17.3850, 78.4867), // Hyderabad
-                QtPositioning.coordinate(11.0168, 76.9558), // Coimbatore
-                QtPositioning.coordinate(15.3173, 75.7139), // Hubballi
-                QtPositioning.coordinate(9.9312, 76.2673)   // Kochi
-            ]
-
-            return southPoints[index % southPoints.length]
-        }
-
-        // -----------------------------------------------------
-        // EAST INDIA
-        // -----------------------------------------------------
-
-        if (region === "East India") {
-
-            var eastPoints = [
-                QtPositioning.coordinate(22.5726, 88.3639), // Kolkata
-                QtPositioning.coordinate(20.2961, 85.8245), // Bhubaneswar
-                QtPositioning.coordinate(26.1445, 91.7362), // Guwahati
-                QtPositioning.coordinate(23.3441, 85.3096), // Ranchi
-                QtPositioning.coordinate(25.5941, 85.1376)  // Patna
-            ]
-
-            return eastPoints[index % eastPoints.length]
-        }
-
-        // -----------------------------------------------------
-        // WEST INDIA
-        // -----------------------------------------------------
-
-        if (region === "West India") {
-
-            var westPoints = [
-                QtPositioning.coordinate(19.0760, 72.8777), // Mumbai
-                QtPositioning.coordinate(23.0225, 72.5714), // Ahmedabad
-                QtPositioning.coordinate(21.1702, 72.8311), // Surat
-                QtPositioning.coordinate(15.4909, 73.8278), // Goa
-                QtPositioning.coordinate(18.5204, 73.8567)  // Pune
-            ]
-
-            return westPoints[index % westPoints.length]
-        }
-
-        return QtPositioning.coordinate(22.5, 79.0)
-    }
-
-    // =========================================================
-    // CREATE ENTITY MODEL
-    // =========================================================
-
-    function createEntities() {
-
-        // Remove previous aircraft
-        entityModel.clear()
-
-        console.log("Creating entities...")
-        console.log("Count:", entityCount)
-        console.log("Type:", entityType)
-        console.log("Region:", region)
-
-        for (var i = 0; i < entityCount; i++) {
-
-            var coordinate = getEntityCoordinate(i)
-
-            entityModel.append({
-                latitude: coordinate.latitude,
-                longitude: coordinate.longitude,
-                entityNumber: i + 1,
-                entityName: entityType + " " +
-                             String(i + 1).padStart(2, "0")
-            })
-
-            console.log(
-                "Entity",
-                i + 1,
-                "Lat:",
-                coordinate.latitude,
-                "Lon:",
-                coordinate.longitude
-            )
-        }
-
-        console.log(
-            "Entities in model:",
-            entityModel.count
-        )
-    }
-
-    // =========================================================
-    // GENERATE SCENARIO
-    // =========================================================
-
     function generateScenario() {
-
-        console.log("======================================")
-        console.log("GENERATE 2D BUTTON CLICKED")
-
-        var prompt = promptInput.text.trim().toLowerCase()
-
-        console.log("Prompt:", prompt)
-
-        // -----------------------------------------------------
-        // EMPTY PROMPT
-        // -----------------------------------------------------
-
-        if (prompt.length === 0) {
-
-            statusMessage = "PLEASE ENTER A SCENARIO"
-
-            console.log("ERROR: Empty prompt")
-
-            return
-        }
-
-        // -----------------------------------------------------
-        // DETECT ENTITY TYPE
-        // -----------------------------------------------------
-
-        if (
-            prompt.includes("aircraft") ||
-            prompt.includes("aircrafts") ||
-            prompt.includes("fighter") ||
-            prompt.includes("plane") ||
-            prompt.includes("jet")
-        ) {
-
-            entityType = "Aircraft"
-
-        } else if (
-            prompt.includes("ship") ||
-            prompt.includes("ships") ||
-            prompt.includes("shipborne")
-        ) {
-
-            entityType = "Ship"
-
-        } else {
-
-            entityType = "Unknown"
-        }
-
-        // -----------------------------------------------------
-        // DETECT REGION
-        // -----------------------------------------------------
-
-        if (prompt.includes("north india")) {
-
-            region = "North India"
-
-        } else if (prompt.includes("south india")) {
-
-            region = "South India"
-
-        } else if (prompt.includes("east india")) {
-
-            region = "East India"
-
-        } else if (prompt.includes("west india")) {
-
-            region = "West India"
-
-        } else {
-
-            region = "Unknown Region"
-        }
-
-        // -----------------------------------------------------
-        // DETECT NUMBER
-        // -----------------------------------------------------
-
-        var match = prompt.match(/\d+/)
-
-        if (match !== null && match.length > 0) {
-
-            entityCount = parseInt(match[0], 10)
-
-        } else {
-
-            entityCount = 1
-        }
-
-        // -----------------------------------------------------
-        // SAFETY LIMIT
-        // -----------------------------------------------------
-
-        if (entityCount < 1)
-            entityCount = 1
-
-        if (entityCount > 20)
-            entityCount = 20
-
-        console.log("Entity Type:", entityType)
-        console.log("Region:", region)
-        console.log("Entity Count:", entityCount)
-
-        // -----------------------------------------------------
-        // RESET
-        // -----------------------------------------------------
-
-        scenarioGenerated = false
-        statusMessage = "GENERATING..."
-
-        // -----------------------------------------------------
-        // CREATE ENTITIES
-        // -----------------------------------------------------
-
-        createEntities()
-
-        // -----------------------------------------------------
-        // UPDATE MAP
-        // -----------------------------------------------------
-
-        Qt.callLater(function() {
-
-            scenarioMap.center = getRegionCenter()
+        if (scenarioEngine.generateScenario(promptInput.text)) {
+            scenarioMap.center = QtPositioning.coordinate(
+                        scenarioEngine.centerLatitude,
+                        scenarioEngine.centerLongitude)
             scenarioMap.zoomLevel = 6
-
-            scenarioGenerated = true
-            statusMessage = "GENERATED"
-
-            console.log(
-                "Map items:",
-                scenarioMap.mapItems.length
-            )
-
-            console.log(
-                "Scenario generated successfully"
-            )
-
-            console.log("======================================")
-        })
+        }
     }
-
-    // =========================================================
-    // MAIN LAYOUT
-    // =========================================================
 
     ColumnLayout {
 
@@ -381,7 +76,9 @@ ApplicationWindow {
 
                 Text {
 
-                    text: "STEP 1 • PROMPT → 2D"
+                      text: window.showingAircraft3D
+                          ? "STEP 2 • AIRCRAFT 3D"
+                          : "STEP 1 • PROMPT → 2D"
 
                     color: "#45aaf2"
 
@@ -551,6 +248,7 @@ ApplicationWindow {
                 id: scenarioMap
 
                 anchors.fill: parent
+                visible: !window.showingAircraft3D
 
                 plugin: mapPlugin
 
@@ -648,7 +346,7 @@ ApplicationWindow {
 
                     parent: scenarioMap
 
-                    model: entityModel
+                    model: scenarioEngine.entityModel
 
                     delegate: MapQuickItem {
 
@@ -699,7 +397,7 @@ ApplicationWindow {
                                     parent.horizontalCenter
 
                                 color:
-                                    entityType === "Aircraft"
+                                    model.entityType === "aircraft"
                                     ? "#0b8fce"
                                     : "#f39c12"
 
@@ -715,7 +413,7 @@ ApplicationWindow {
                                     anchors.centerIn: parent
 
                                     text:
-                                        entityType === "Aircraft"
+                                        model.entityType === "aircraft"
                                         ? "✈"
                                         : "◆"
 
@@ -737,11 +435,10 @@ ApplicationWindow {
                                         Qt.PointingHandCursor
 
                                     onClicked: {
-
-                                        console.log(
-                                            "Selected:",
-                                            model.entityName
-                                        )
+                                        if (model.entityType === "aircraft" &&
+                                                scenarioEngine.selectAircraft(model.id)) {
+                                            window.showingAircraft3D = true
+                                        }
                                     }
                                 }
                             }
@@ -778,7 +475,7 @@ ApplicationWindow {
                                     anchors.centerIn: parent
 
                                     text:
-                                        model.entityName
+                                        model.name
 
                                     color: "#ffffff"
 
@@ -1062,6 +759,19 @@ ApplicationWindow {
                     font.bold: true
                 }
             }
+        }
+    }
+
+    Aircraft3DView {
+        anchors.fill: parent
+        visible: window.showingAircraft3D
+        z: 1000
+        aircraftId: scenarioEngine.selectedEntityId
+        aircraftName: scenarioEngine.selectedEntityName
+
+        onBackRequested: {
+            window.showingAircraft3D = false
+            scenarioEngine.clearSelectedAircraft()
         }
     }
 }
