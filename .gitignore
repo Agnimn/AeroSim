@@ -33,9 +33,18 @@ Release/
 # Environment / secrets
 .env
 .env.*
+secrets.ini
 
 # OS files
 Thumbs.db
 .DS_Store
 
 .qtcreator/
+
+# Local dependency and virtual-environment directories
+node_modules/
+.venv/
+
+# Local runtime captures
+app_stdout.txt
+app_stderr.txt

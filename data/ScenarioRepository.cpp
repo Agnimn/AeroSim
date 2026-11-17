@@ -86,3 +86,11 @@ QString ScenarioRepository::storageDirectory() const
 {
     return m_storageDirectory;
 }
+
+QString ScenarioRepository::latestScenarioPath() const
+{
+    QDir directory(m_storageDirectory);
+    const QFileInfoList files = directory.entryInfoList(
+        {QStringLiteral("*.json")}, QDir::Files, QDir::Time);
+    return files.isEmpty() ? QString() : files.first().absoluteFilePath();
+}

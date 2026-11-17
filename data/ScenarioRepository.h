@@ -14,6 +14,7 @@ public:
                       QString *savedPath = nullptr, QString *errorMessage = nullptr) const;
     bool loadScenario(const QString &filePath, Scenario &scenario, QString *prompt = nullptr,
                       QString *errorMessage = nullptr) const;
+    QString latestScenarioPath() const;
     QString storageDirectory() const;
 
 private:
