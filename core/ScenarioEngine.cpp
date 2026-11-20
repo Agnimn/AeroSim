@@ -2086,6 +2086,35 @@ bool ScenarioEngine::executeScenarioPrompt(const QString &prompt,
         summaryTypes << entityLabel;
     }
 
+    QSet<QString> committedIds;
+    QSet<QString> committedCalls;
+    for (const Entity &entity : generated.entities())
+    {
+        const QString id = entity.id().trimmed();
+        const QString callsign = entity.callsign().trimmed();
+        if (id.isEmpty() || committedIds.contains(id))
+        {
+            setStatusMessage(QStringLiteral("GENERATION FAILED: DUPLICATE OR EMPTY ENTITY ID"));
+            return false;
+        }
+        if (!callsign.isEmpty() && committedCalls.contains(callsign))
+        {
+            setStatusMessage(QStringLiteral("GENERATION FAILED: DUPLICATE AIRCRAFT CALLSIGN"));
+            return false;
+        }
+        committedIds.insert(id);
+        if (!callsign.isEmpty())
+            committedCalls.insert(callsign);
+        for (const Waypoint &waypoint : entity.route())
+        {
+            if (!QGeoCoordinate(waypoint.latitude, waypoint.longitude).isValid())
+            {
+                setStatusMessage(QStringLiteral("GENERATION FAILED: INVALID ROUTE COORDINATE"));
+                return false;
+            }
+        }
+    }
+
     m_scenario = std::move(generated);
     if (additive && !scenarioRegion.isEmpty() && scenarioRegion != QStringLiteral("Unknown Region"))
         m_scenario.setRegion(scenarioRegion);
@@ -2134,6 +2163,7 @@ bool ScenarioEngine::executeScenarioPrompt(const QString &prompt,
 bool ScenarioEngine::generateScenarioWithAI(const QString &prompt)
 {
     qDebug().noquote() << "[SCENARIO AI] submit; entityCountBefore=" << entityCount();
+    m_aiRetryCount = 0;
     const int commandSequence =
         recordCommandHistory(prompt, QStringLiteral("submitted"));
     if (prompt.trimmed().isEmpty())
@@ -2198,8 +2228,36 @@ bool ScenarioEngine::generateScenarioWithAI(const QString &prompt)
 void ScenarioEngine::handleOllamaResponse(const QString &prompt, const QString &response)
 {
     const int commandSequence = m_pendingCommandSequence;
+    qWarning().noquote() << "[SCENARIO AI] raw Ollama response:"
+                         << response;
     qDebug().noquote() << "[SCENARIO AI] response received; entityCount="
                        << entityCount();
+    const auto rejectOrRetry = [this, prompt, commandSequence](const QString &rejection)
+    {
+        if (m_aiRetryCount < 1)
+        {
+            ++m_aiRetryCount;
+            setAiRequestPending(true);
+            setStatusMessage(QStringLiteral("OLLAMA RESPONSE INVALID - REQUESTING ONE CORRECTED RESPONSE"));
+            updateCommandHistory(commandSequence, QStringLiteral("pending"));
+            m_ollamaClient.generate(
+                QStringLiteral(
+                    "Correct the previous JSON response. Return exactly one flat JSON object "
+                    "and no markdown or explanation. Preserve the original user intent exactly: "
+                    "operation, entity count, location, and route destinations must match. "
+                    "The original command is [%1]. The exact validation failure is [%2]. "
+                    "For an ordinary create/add aircraft command use ADD_ENTITIES.")
+                    .arg(prompt, rejection));
+            return;
+        }
+        setAiRequestPending(false);
+        updateCommandHistory(commandSequence, QStringLiteral("failed"));
+        setStatusMessage(QStringLiteral(
+                             "MODEL RESPONSE REJECTED: %1; DETERMINISTIC FALLBACK NOT USED")
+                             .arg(rejection));
+        m_pendingAiPrompt.clear();
+        m_pendingCommandSequence = 0;
+    };
     const auto rejectModelResponse = [this, commandSequence](const QString &rejection)
     {
         setAiRequestPending(false);
@@ -2216,9 +2274,9 @@ void ScenarioEngine::handleOllamaResponse(const QString &prompt, const QString &
     if (!AICommand::fromResponse(response, request, &errorMessage))
     {
         qWarning().noquote() << "[SCENARIO AI] command validation failed:" << errorMessage;
-        rejectModelResponse(errorMessage.isEmpty()
-                                ? QStringLiteral("OLLAMA RETURNED A MALFORMED COMMAND")
-                                : errorMessage);
+        rejectOrRetry(errorMessage.isEmpty()
+                          ? QStringLiteral("OLLAMA RETURNED A MALFORMED COMMAND")
+                          : errorMessage);
         return;
     }
     QString canonicalPrompt;
@@ -2234,6 +2292,33 @@ void ScenarioEngine::handleOllamaResponse(const QString &prompt, const QString &
     QString originalError;
     const bool originalParsed =
         m_parser.parsePrompt(prompt, originalRequest, &originalError, m_selectedAirbaseId);
+    if (originalParsed &&
+        (originalRequest.operation == ScenarioOperation::MoveFormation ||
+         originalRequest.operation == ScenarioOperation::StopFormation ||
+         originalRequest.operation == ScenarioOperation::ResumeFormation ||
+         originalRequest.operation == ScenarioOperation::DisbandFormation))
+    {
+        const bool requestIsSameFormationOperation =
+            (originalRequest.operation == ScenarioOperation::MoveFormation &&
+             request.operation == ScenarioOperation::MoveFormation) ||
+            (originalRequest.operation == ScenarioOperation::StopFormation &&
+             request.operation == ScenarioOperation::StopFormation) ||
+            (originalRequest.operation == ScenarioOperation::ResumeFormation &&
+             request.operation == ScenarioOperation::ResumeFormation) ||
+            (originalRequest.operation == ScenarioOperation::DisbandFormation &&
+             request.operation == ScenarioOperation::DisbandFormation);
+        if (requestIsSameFormationOperation)
+        {
+            if (originalRequest.formationTypeSpecified &&
+                !request.formationTypeSpecified)
+            {
+                request.formationTypeSpecified = true;
+                request.formationType = originalRequest.formationType;
+            }
+            if (originalRequest.allFormations)
+                request.allFormations = true;
+        }
+    }
     if (originalParsed &&
         (originalRequest.operation == ScenarioOperation::Add ||
          originalRequest.operation == ScenarioOperation::Replace))
@@ -2257,8 +2342,8 @@ void ScenarioEngine::handleOllamaResponse(const QString &prompt, const QString &
             modelIntent.routeDestinations == originalRequest.routeDestinations;
         if (!matchesOriginal)
         {
-            rejectModelResponse(
-                QStringLiteral("MODEL COMMAND DOES NOT MATCH THE REQUESTED OPERATION, COUNT, OR REGION"));
+            rejectOrRetry(QStringLiteral(
+                "MODEL COMMAND DOES NOT MATCH THE REQUESTED OPERATION, COUNT, LOCATION, OR ROUTE"));
             return;
         }
     }
@@ -2269,7 +2354,7 @@ void ScenarioEngine::handleOllamaResponse(const QString &prompt, const QString &
             request.entityCount != originalRequest.entityCount ||
             request.formationType != originalRequest.formationType)
         {
-            rejectModelResponse(
+            rejectOrRetry(
                 QStringLiteral("MODEL FORMATION DOES NOT MATCH THE REQUESTED COUNT OR TYPE"));
             return;
         }
@@ -2286,7 +2371,7 @@ void ScenarioEngine::handleOllamaResponse(const QString &prompt, const QString &
             request.routeAircraftId.compare(originalRequest.routeAircraftId,
                                              Qt::CaseInsensitive) == 0;
         if (!sameRoute) {
-            rejectModelResponse(
+            rejectOrRetry(
                 QStringLiteral("MODEL ROUTE DOES NOT MATCH THE REQUESTED WAYPOINTS OR AIRCRAFT"));
             return;
         }
@@ -2321,7 +2406,7 @@ void ScenarioEngine::handleOllamaResponse(const QString &prompt, const QString &
                  request.formationType == originalRequest.formationType);
         if (!matchesOriginal)
         {
-            rejectModelResponse(
+            rejectOrRetry(
                 QStringLiteral("MODEL COMMAND DOES NOT MATCH THE REQUESTED AIRCRAFT OR FORMATION ACTION"));
             return;
         }
@@ -2329,7 +2414,6 @@ void ScenarioEngine::handleOllamaResponse(const QString &prompt, const QString &
     const auto isIndividualAircraftOperation = [](ScenarioOperation operation)
     {
         return operation == ScenarioOperation::Move ||
-               operation == ScenarioOperation::MoveFormation ||
                operation == ScenarioOperation::ChangeRoute ||
                operation == ScenarioOperation::AssignRoute ||
                operation == ScenarioOperation::MoveAlongRoute ||
@@ -2365,7 +2449,7 @@ void ScenarioEngine::handleOllamaResponse(const QString &prompt, const QString &
              request.formationType == originalRequest.formationType);
         if (!matchesOriginal)
         {
-            rejectModelResponse(
+            rejectOrRetry(
                 QStringLiteral("MODEL COMMAND DOES NOT MATCH THE REQUESTED AIRCRAFT ACTION"));
             return;
         }
@@ -2380,7 +2464,7 @@ void ScenarioEngine::handleOllamaResponse(const QString &prompt, const QString &
         originalRequest.operation == ScenarioOperation::Replace &&
         request.operation == ScenarioOperation::Add)
         executionPrompt.replace(0, QStringLiteral("Add").size(),
-                                QStringLiteral("Generate"));
+                                QStringLiteral("Replace"));
 
     if (!executeScenarioPrompt(executionPrompt, commandSequence))
     {

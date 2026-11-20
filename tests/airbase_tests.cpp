@@ -178,6 +178,7 @@ private slots:
     void ollamaRejectedMovementDoesNotExecuteFallback();
     void ollamaLiveMovementCommands();
     void ollamaLiveWorkflowCommands();
+    void ollamaLiveBengaluruRoute();
     void ollamaLiveAircraftManagementCommands();
     void ollamaUnavailableFallbackRejectsInvalidPrompt();
     void ollamaFallbackCanBeDisabled();
@@ -587,6 +588,8 @@ void AirbaseScenarioTests::regionScenarioPreservesExistingPlacement()
 void AirbaseScenarioTests::routeIntentParsingIsEquivalent_data()
 {
     QTest::addColumn<QString>("prompt");
+    QTest::newRow("exact Bengaluru to Chennai request")
+        << QStringLiteral("Create 5 aircraft in Bengaluru and route one aircraft from Bengaluru to Chennai.");
     QTest::newRow("requested wording")
         << QStringLiteral("Create 5 aircraft near Bengaluru and send one toward Chennai.");
     QTest::newRow("numeric and Bangalore alias")
@@ -602,7 +605,7 @@ void AirbaseScenarioTests::routeIntentParsingIsEquivalent()
     ScenarioRequest request;
     QString error;
     QVERIFY2(parser.parsePrompt(prompt, request, &error), qPrintable(error));
-    QCOMPARE(request.operation, ScenarioOperation::Replace);
+    QCOMPARE(request.operation, ScenarioOperation::Add);
     QCOMPARE(request.entityCount, 5);
     QCOMPARE(request.entityType, QStringLiteral("aircraft"));
     QCOMPARE(request.region, QStringLiteral("Bengaluru"));
@@ -1146,6 +1149,8 @@ void AirbaseScenarioTests::naturalLanguageRouteExports()
 void AirbaseScenarioTests::routeIntentGeneratesOneChennaiRoute_data()
 {
     QTest::addColumn<QString>("prompt");
+    QTest::newRow("exact Bengaluru to Chennai request")
+        << QStringLiteral("Create 5 aircraft in Bengaluru and route one aircraft from Bengaluru to Chennai.");
     QTest::newRow("requested wording")
         << QStringLiteral("Create 5 aircraft near Bengaluru and send one toward Chennai.");
     QTest::newRow("numeric and Bangalore alias")
@@ -1522,7 +1527,7 @@ void AirbaseScenarioTests::replacementResetsSimulationAndModelState()
     engine.pauseSimulation();
     QVERIFY(engine.simulationTime() > 0.0);
 
-    QVERIFY(engine.generateScenario(QStringLiteral("CREATE 2 AIRCRAFT IN SOUTH INDIA")));
+    QVERIFY(engine.generateScenario(QStringLiteral("REPLACE SCENARIO WITH 2 AIRCRAFT IN SOUTH INDIA")));
 
     QCOMPARE(engine.region(), QStringLiteral("South India"));
     QCOMPARE(engine.entityCount(), 2);
@@ -1549,7 +1554,7 @@ void AirbaseScenarioTests::generatePromptReplacesExistingScenario()
     ScenarioEngine engine;
     QVERIFY(engine.generateScenario(QStringLiteral("Generate 3 aircraft in North India")));
 
-    QVERIFY(engine.generateScenario(QStringLiteral("Generate 2 aircraft in South India")));
+    QVERIFY(engine.generateScenario(QStringLiteral("Replace scenario with 2 aircraft in South India")));
 
     QCOMPARE(engine.region(), QStringLiteral("South India"));
     QCOMPARE(engine.entityCount(), 2);
@@ -2833,6 +2838,40 @@ void AirbaseScenarioTests::ollamaLiveWorkflowCommands()
     QCOMPARE(leader->route().last().longitude, 80.2707);
 }
 
+void AirbaseScenarioTests::ollamaLiveBengaluruRoute()
+{
+    if (qEnvironmentVariableIsEmpty("AEROSIM_TEST_LIVE_OLLAMA"))
+        QSKIP("Set AEROSIM_TEST_LIVE_OLLAMA=1 to run against the configured local Ollama.");
+
+    ScopedEnvironmentVariable endpointSetting(
+        "AEROSIM_OLLAMA_ENDPOINT", QByteArrayLiteral("http://127.0.0.1:11434"));
+    ScopedEnvironmentVariable modelSetting(
+        "AEROSIM_OLLAMA_MODEL", QByteArrayLiteral("qwen2.5-coder:1.5b"));
+    ScopedEnvironmentVariable fallbackSetting(
+        "AEROSIM_DISABLE_DETERMINISTIC_FALLBACK", QByteArrayLiteral("1"));
+    ScenarioEngine engine;
+
+    QVERIFY(engine.generateScenarioWithAI(
+        QStringLiteral("Create 5 aircraft in Bengaluru and route one aircraft from Bengaluru to Chennai.")));
+    QTRY_VERIFY_WITH_TIMEOUT(!engine.aiRequestPending(), 90000);
+    QVERIFY2(engine.statusMessage().startsWith(
+                 QStringLiteral("OLLAMA GENERATED JSON; COMMAND EXECUTED:")),
+             qPrintable(engine.statusMessage()));
+    QCOMPARE(engine.entityCount(), 5);
+    QCOMPARE(engine.entityModel()->rowCount(), 5);
+    QCOMPARE(engine.region(), QStringLiteral("Bengaluru"));
+
+    int routedAircraftCount = 0;
+    for (const Entity &entity : engine.scenario().entities())
+    {
+        const bool routeToChennai = !entity.route().isEmpty() &&
+                                    entity.route().last().name == QStringLiteral("Chennai");
+        if (routeToChennai)
+            ++routedAircraftCount;
+    }
+    QCOMPARE(routedAircraftCount, 1);
+}
+
 void AirbaseScenarioTests::ollamaLiveAircraftManagementCommands()
 {
     if (qEnvironmentVariableIsEmpty("AEROSIM_TEST_LIVE_OLLAMA"))
@@ -3024,8 +3063,8 @@ void AirbaseScenarioTests::ollamaRegionAddCommandExecutesScenarioMutation()
     QCOMPARE(engine.statusMessage(),
              QStringLiteral("OLLAMA GENERATED JSON; COMMAND EXECUTED: GENERATED"));
     QCOMPARE(engine.region(), QStringLiteral("South India"));
-    QCOMPARE(engine.entityCount(), 5);
-    QCOMPARE(engine.entityModel()->rowCount(), 5);
+    QCOMPARE(engine.entityCount(), 7);
+    QCOMPARE(engine.entityModel()->rowCount(), 7);
 }
 
 void AirbaseScenarioTests::ollamaAddPreservesExistingEntities()

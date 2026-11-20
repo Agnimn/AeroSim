@@ -665,11 +665,12 @@ bool AIParser::parsePrompt(const QString &prompt, ScenarioRequest &request,
     const bool isAddOperation = normalized.startsWith(QStringLiteral("add "));
     const bool isCreateOperation = normalized.startsWith(QStringLiteral("create "));
     const bool isGenerateOperation = normalized.startsWith(QStringLiteral("generate "));
+    const bool isMakeOperation = normalized.startsWith(QStringLiteral("make "));
     const bool isReplaceOperation = normalized.startsWith(QStringLiteral("replace "));
-    request.operation = isAddOperation ? ScenarioOperation::Add
-                                       : ScenarioOperation::Replace;
+    request.operation = isReplaceOperation ? ScenarioOperation::Replace
+                                           : ScenarioOperation::Add;
     request.explicitOperation = isAddOperation || isCreateOperation ||
-                                isGenerateOperation || isReplaceOperation;
+                                isGenerateOperation || isMakeOperation || isReplaceOperation;
     if (normalized.startsWith(QStringLiteral("show airbases")))
     {
         request.airbaseRegion = regionFromText(normalized);
@@ -762,10 +763,28 @@ bool AIParser::parsePrompt(const QString &prompt, ScenarioRequest &request,
     request.hasCustomLocation = !request.locationName.isEmpty() && request.locationName != request.region;
 
     QString entityPrompt = normalized;
+    QVector<QPair<int, int>> routeClauseRanges;
+    const QRegularExpression routeFromPattern(
+        QStringLiteral(R"(\b(?:route|send|direct|assign|make|have)\s+(?:one|1|another|the other|first|second)(?:\s+(?:aircraft|plane))?\s+from\s+[a-z]+(?:\s+[a-z]+)?\s+to\s+([a-z]+)\b)"));
+    QRegularExpressionMatchIterator routeFromMatches = routeFromPattern.globalMatch(normalized);
+    while (routeFromMatches.hasNext())
+    {
+        const QRegularExpressionMatch routeMatch = routeFromMatches.next();
+        const QString destination = regionFromText(routeMatch.captured(1));
+        if (destination == QStringLiteral("Unknown Region") ||
+            destination == QStringLiteral("India"))
+        {
+            if (errorMessage)
+                *errorMessage = QStringLiteral("SPECIFY A SUPPORTED ROUTE DESTINATION");
+            return false;
+        }
+        request.routeDestinations.push_back(destination);
+        routeClauseRanges.push_back({routeMatch.capturedStart(), routeMatch.capturedLength()});
+    }
+
     const QRegularExpression routePattern(
         QStringLiteral(R"(\b(?:send|route|direct|assign|make|have|with)\s+(?:one|1|another|the other|first|second)(?:\s+(?:aircraft|plane))?(?:\s+(?:fly|flying|head|headed|travel|travelling|routed))?\s+(?:to|towards?)\s+([a-z]+)\b)"));
     QRegularExpressionMatchIterator routeMatches = routePattern.globalMatch(normalized);
-    QVector<QPair<int, int>> routeClauseRanges;
     while (routeMatches.hasNext())
     {
         const QRegularExpressionMatch routeMatch = routeMatches.next();

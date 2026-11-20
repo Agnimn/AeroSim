@@ -125,7 +125,10 @@ bool AICommand::fromJson(const QJsonObject &object, ScenarioRequest &request,
                          QString *errorMessage)
 {
     request = {};
-    const QString operation = object.value(QStringLiteral("operation")).toString().trimmed();
+    QString operation = object.value(QStringLiteral("operation")).toString().trimmed();
+    operation = operation.toUpper().replace(QLatin1Char('-'), QLatin1Char('_'))
+                       .replace(QRegularExpression(QStringLiteral("\\s+")),
+                                QStringLiteral("_"));
     if (!validOperation(operation))
     {
         if (errorMessage)
@@ -228,7 +231,9 @@ bool AICommand::fromJson(const QJsonObject &object, ScenarioRequest &request,
                 *errorMessage = QStringLiteral("ONLY AIRCRAFT ENTITIES ARE SUPPORTED");
             return false;
         }
-        const QJsonValue countValue = object.value(QStringLiteral("count"));
+        QJsonValue countValue = object.value(QStringLiteral("count"));
+        if (!countValue.isDouble())
+            countValue = object.value(QStringLiteral("entity_count"));
         if (!countValue.isDouble() || countValue.toDouble() != qFloor(countValue.toDouble()))
         {
             if (errorMessage)

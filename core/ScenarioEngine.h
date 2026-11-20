@@ -180,6 +180,7 @@ private:
     bool m_scenarioGenerated = false;
     bool m_aiRequestPending = false;
     QString m_pendingAiPrompt;
+    int m_aiRetryCount = 0;
     QVector<CommandHistoryEntry> m_commandHistory;
     int m_pendingCommandSequence = 0;
 };
